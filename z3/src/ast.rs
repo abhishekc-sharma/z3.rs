@@ -184,7 +184,9 @@ pub trait Ast<'ctx>: fmt::Debug {
         }
     }
     */
-    fn new(ctx: &'ctx Context, ast: Z3_ast) -> Self where Self: Sized;
+    fn new(ctx: &'ctx Context, ast: Z3_ast) -> Self
+    where
+        Self: Sized;
 
     /// Compare this `Ast` with another `Ast`, and get a [`Bool`](struct.Bool.html)
     /// representing the result.
@@ -193,26 +195,29 @@ pub trait Ast<'ctx>: fmt::Debug {
     /// `Ast`s being compared must be the same type.
     //
     // Note that we can't use the binop! macro because of the `pub` keyword on it
-    fn _eq(&self, other: &Self) -> Bool<'ctx> where Self: Sized {
+    fn _eq(&self, other: &Self) -> Bool<'ctx>
+    where
+        Self: Sized,
+    {
         self._safe_eq(other).unwrap()
     }
 
-
     /// Compare this `Ast` with another `Ast`, and get a Result.  Errors if the sort does not
     /// match for the two values.
-    fn _safe_eq(&self, other: &Self) -> Result<Bool<'ctx>, SortDiffers<'ctx>> where Self: Sized {
+    fn _safe_eq(&self, other: &Self) -> Result<Bool<'ctx>, SortDiffers<'ctx>>
+    where
+        Self: Sized,
+    {
         assert_eq!(self.get_ctx(), other.get_ctx());
 
         let left_sort = self.get_sort();
         let right_sort = other.get_sort();
         match left_sort == right_sort {
-            true => {
-                Ok(Bool::new(self.get_ctx(), unsafe {
-                    let _guard = Z3_MUTEX.lock().unwrap();
-                    Z3_mk_eq(self.get_ctx().z3_ctx, self.get_z3_ast(), other.get_z3_ast())
-                }))
-            },
-            false => Err(SortDiffers::new(left_sort, right_sort))
+            true => Ok(Bool::new(self.get_ctx(), unsafe {
+                let _guard = Z3_MUTEX.lock().unwrap();
+                Z3_mk_eq(self.get_ctx().z3_ctx, self.get_z3_ast(), other.get_z3_ast())
+            })),
+            false => Err(SortDiffers::new(left_sort, right_sort)),
         }
     }
 
@@ -223,7 +228,10 @@ pub trait Ast<'ctx>: fmt::Debug {
     /// `Ast`s being compared must all be the same type.
     //
     // Note that we can't use the varop! macro because of the `pub` keyword on it
-    fn distinct(context: &'ctx Context, values: &[&Self]) -> Bool<'ctx> where Self: Sized {
+    fn distinct(context: &'ctx Context, values: &[&Self]) -> Bool<'ctx>
+    where
+        Self: Sized,
+    {
         Bool::new(context, unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
             assert!(values.len() <= 0xffffffff);
@@ -242,7 +250,10 @@ pub trait Ast<'ctx>: fmt::Debug {
     /// Simplify the `Ast`. Returns a new `Ast` which is equivalent,
     /// but simplified using algebraic simplification rules, such as
     /// constant propagation.
-    fn simplify(&self) -> Self where Self: Sized {
+    fn simplify(&self) -> Self
+    where
+        Self: Sized,
+    {
         Self::new(self.get_ctx(), unsafe {
             Z3_simplify(self.get_ctx().z3_ctx, self.get_z3_ast())
         })
@@ -250,7 +261,10 @@ pub trait Ast<'ctx>: fmt::Debug {
 
     /// Performs substitution on the `Ast`. The slice `substitutions` contains a
     /// list of pairs with a "from" `Ast` that will be substituted by a "to" `Ast`.
-    fn substitute<T: Ast<'ctx>>(&self, substitutions: &[(&T, &T)]) -> Self where Self: Sized {
+    fn substitute<T: Ast<'ctx>>(&self, substitutions: &[(&T, &T)]) -> Self
+    where
+        Self: Sized,
+    {
         Self::new(self.get_ctx(), unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
 
@@ -356,7 +370,10 @@ pub trait Ast<'ctx>: fmt::Debug {
         }
     }
 
-    fn translate<'src_ctx>(&'src_ctx self, dest: &'ctx Context) -> Self where Self: Sized {
+    fn translate<'src_ctx>(&'src_ctx self, dest: &'ctx Context) -> Self
+    where
+        Self: Sized,
+    {
         Self::new(dest, unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
             Z3_translate(self.get_ctx().z3_ctx, self.get_z3_ast(), dest.z3_ctx)
@@ -990,6 +1007,22 @@ impl<'ctx> Float<'ctx> {
         })
     }
 
+    // returns RoundingMode nearest ties to away
+    pub fn round_nearest_ties_to_away(ctx: &'ctx Context) -> Float<'ctx> {
+        Self::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_round_nearest_ties_to_away(ctx.z3_ctx)
+        })
+    }
+
+    // returns RoundingMode nearest ties to even
+    pub fn round_nearest_ties_to_even(ctx: &'ctx Context) -> Float<'ctx> {
+        Self::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_round_nearest_ties_to_even(ctx.z3_ctx)
+        })
+    }
+
     // Add two floats of the same size, rounding towards zero
     pub fn add_towards_zero(&self, other: &Self) -> Float<'ctx> {
         Self::round_towards_zero(self.ctx).add(self, other)
@@ -1010,15 +1043,97 @@ impl<'ctx> Float<'ctx> {
         Self::round_towards_zero(self.ctx).div(self, other)
     }
 
+    pub fn cast_to_signed_bv(&self, sz: u32) -> BV<'ctx> {
+        let round = Self::round_nearest_ties_to_even(self.ctx);
+        BV::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_sbv(self.ctx.z3_ctx, round.z3_ast, self.z3_ast, sz)
+        })
+    }
+
+    pub fn cast_to_unsigned_bv(&self, sz: u32) -> BV<'ctx> {
+        let round = Self::round_nearest_ties_to_even(self.ctx);
+        BV::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_ubv(self.ctx.z3_ctx, round.z3_ast, self.z3_ast, sz)
+        })
+    }
+
+    pub fn bitwise_to_bv(&self) -> BV<'ctx> {
+        BV::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_ieee_bv(self.ctx.z3_ctx, self.z3_ast)
+        })
+    }
+
+    pub fn is_nan(&self) -> Bool<'ctx> {
+        Bool::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_is_nan(self.ctx.z3_ctx, self.z3_ast)
+        })
+    }
+
+    pub fn nan_float32(ctx: &'ctx Context) -> Float<'ctx> {
+        let sort = Sort::float32(ctx);
+        Float::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_nan(ctx.z3_ctx, sort.z3_sort)
+        })
+    }
+
+    pub fn nan_double(ctx: &'ctx Context) -> Float<'ctx> {
+        let sort = Sort::double(ctx);
+        Float::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_nan(ctx.z3_ctx, sort.z3_sort)
+        })
+    }
+
+    pub fn zero(ctx: &'ctx Context, negative: bool) -> Float<'ctx> {
+        let sort = Sort::double(ctx);
+        Float::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_zero(ctx.z3_ctx, sort.z3_sort, negative)
+        })
+    }
+
+    pub fn is_zero(&self, negative: bool) -> Bool<'ctx> {
+        self._eq(&Self::zero(self.ctx, negative))
+    }
+
+    pub fn inf(ctx: &'ctx Context, negative: bool) -> Float<'ctx> {
+        let sort = Sort::double(ctx);
+        Float::new(ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_inf(ctx.z3_ctx, sort.z3_sort, negative)
+        })
+    }
+
+    pub fn is_inf(&self, negative: bool) -> Bool<'ctx> {
+        self._eq(&Self::inf(self.ctx, negative))
+    }
+
+    pub fn is_finite(&self) -> Bool<'ctx> {
+        Bool::and(
+            self.ctx,
+            &[
+                &self.is_nan().not(),
+                &self.is_inf(true).not(),
+                &self.is_inf(false).not(),
+            ],
+        )
+    }
+
     unop! {
         unary_abs(Z3_mk_fpa_abs, Self);
         unary_neg(Z3_mk_fpa_neg, Self);
     }
     binop! {
+        equal(Z3_mk_fpa_eq, Bool<'ctx>);
         lt(Z3_mk_fpa_lt, Bool<'ctx>);
-        le(Z3_mk_fpa_lt, Bool<'ctx>);
+        le(Z3_mk_fpa_leq, Bool<'ctx>);
         gt(Z3_mk_fpa_gt, Bool<'ctx>);
-        ge(Z3_mk_fpa_gt, Bool<'ctx>);
+        ge(Z3_mk_fpa_geq, Bool<'ctx>);
     }
     trinop! {
         add(Z3_mk_fpa_add, Self);
@@ -1345,6 +1460,40 @@ impl<'ctx> BV<'ctx> {
         Self::new(self.ctx, unsafe {
             let _guard = Z3_MUTEX.lock().unwrap();
             Z3_mk_zero_ext(self.ctx.z3_ctx, i, self.z3_ast)
+        })
+    }
+
+    pub fn cast_signed_to_float(&self) -> Float<'ctx> {
+        let round = Float::round_nearest_ties_to_even(self.ctx);
+        let sort = Sort::double(self.ctx);
+        Float::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_fp_signed(self.ctx.z3_ctx, round.z3_ast, self.z3_ast, sort.z3_sort)
+        })
+    }
+
+    pub fn cast_unsigned_to_float(&self) -> Float<'ctx> {
+        let round = Float::round_nearest_ties_to_even(self.ctx);
+        let sort = Sort::double(self.ctx);
+        Float::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_fp_unsigned(self.ctx.z3_ctx, round.z3_ast, self.z3_ast, sort.z3_sort)
+        })
+    }
+
+    pub fn bitwise_to_float32(&self) -> Float<'ctx> {
+        let sort = Sort::float32(self.ctx);
+        Float::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_fp_bv(self.ctx.z3_ctx, self.z3_ast, sort.z3_sort)
+        })
+    }
+
+    pub fn bitwise_to_double(&self) -> Float<'ctx> {
+        let sort = Sort::double(self.ctx);
+        Float::new(self.ctx, unsafe {
+            let _guard = Z3_MUTEX.lock().unwrap();
+            Z3_mk_fpa_to_fp_bv(self.ctx.z3_ctx, self.z3_ast, sort.z3_sort)
         })
     }
 }
@@ -1776,9 +1925,7 @@ pub fn exists_const<'ctx>(
 
 impl IsNotApp {
     pub fn new(kind: AstKind) -> Self {
-        Self {
-            kind,
-        }
+        Self { kind }
     }
 
     pub fn kind(&self) -> AstKind {
@@ -1788,6 +1935,10 @@ impl IsNotApp {
 
 impl fmt::Display for IsNotApp {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "ast node is not a function application, has kind {:?}", self.kind())
+        write!(
+            f,
+            "ast node is not a function application, has kind {:?}",
+            self.kind()
+        )
     }
 }
